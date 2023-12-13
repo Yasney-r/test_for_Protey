@@ -5,33 +5,24 @@
 #include <boost/beast.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
-#include <boost/asio/connect.hpp>
 #include <boost/asio/ip/tcp.hpp>
 #include <boost/asio/co_spawn.hpp>
 #include <boost/asio/detached.hpp>
 #include <boost/asio/io_context.hpp>
-#include <boost/asio/read_until.hpp>
-#include <boost/asio/write.hpp>
-#include <boost/asio/signal_set.hpp>
 #include <boost/asio/streambuf.hpp>
 #include <boost/asio/awaitable.hpp>
 #include <boost/asio.hpp>
 #include <deque>
-#include <chrono>
-#include <functional>
 #include <cstdlib>
 #include <ctime>
 #include <set>
-#include <boost/date_time/posix_time/posix_time.hpp>
-#include <boost/property_tree/ptree.hpp>
-#include <boost/property_tree/json_parser.hpp>
-#include <fstream>
-
+#include "spdlog/spdlog.h"
 
  
 #include "config.h"
 #include "timer.h"
 #include "cdr.h"
+#include "log.h"
 
 
 
@@ -80,7 +71,7 @@ asio::awaitable<void> server::workForPool(tcp::socket socket)
 {
 	cdr cdr;
 	cdr.setConnectTime();															//сохраняем в CDR время подключения
-	Timer timer;
+    Timer timer;
 	id++;
 	int callId = id;	
 	cdr.setCallId(std::to_string(callId));											//сохраняем в CDR CallId
@@ -90,18 +81,19 @@ asio::awaitable<void> server::workForPool(tcp::socket socket)
 
 	http::response<http::dynamic_body> res;											//создаем объект для входящего запроса
 	co_await http::async_read(socket, buffer, res, asio::use_awaitable);			//читаем из сккета запрос
-	//std::cout << "prinimaem number";
+    log_debug("Request number {}");
+
 	
 	int number = stoi(boost::beast::buffers_to_string(res.body().data()));			//заносим в number номер из тела запроса
 	buffer.consume(buffer.size());													//чистим буфер
-	cdr.setNumber(std::to_string(number));											//сохраняем в CDR номер абонента
-	std::cout << std::to_string(number);
+	cdr.setNumber(std::to_string(number));											//сохраняем в CDR номер абонент
+    log_info("subscriber number: {}", number);
 
 	if (numberMap.find(number) == numberMap.end()) {								//если нету нашгего номера, то добавляем
 		numberMap.insert(number);													//добавляем
 	}
 	else {																			//если есть наш номер, то соккет закрывается и корутина тоже
-		
+		log_warn("Call duplication {}", number);
 		http::response<http::string_body> deplicateResponse;
 		{
 			http::status::bad_request;
@@ -110,19 +102,23 @@ asio::awaitable<void> server::workForPool(tcp::socket socket)
 			deplicateResponse.keep_alive(res.keep_alive());
 			deplicateResponse.body() = "call duplication";
 		}
+        log_debug("Create dulication responce. Number: {}", number);
 		co_await http::async_write(socket, deplicateResponse, asio::use_awaitable);
+        log_error("Error disconnect: Call duplication: {}", number);
 		do_close(std::move(socket));
 
 		cdr.setStatus("call duplication");
 		std::thread trd_forDisconnect([&]() {
 			cdr.setDisconnctTime(false);
 			});
+        log_debug("Create CDR number {}", number);
 		co_return;
 	}
 	
 	
 	if (pooler>=lengthPool) {														//если сюжет overload
 		cdr.setStatus("overload");
+        log_warn("Overload!!! Number: {}", number);
 		http::response<http::string_body> overloadResponse;
 		{
 			http::status::bad_request;
@@ -131,11 +127,14 @@ asio::awaitable<void> server::workForPool(tcp::socket socket)
 			overloadResponse.keep_alive(res.keep_alive());
 			overloadResponse.body() = "overload";
 		}
+        log_debug("Create overload response, Number: {}", number);
 		co_await http::async_write(socket, overloadResponse, asio::use_awaitable);
+
 		do_close(std::move(socket));
 		std::thread trd_forDisconnect([&]() { 
 			cdr.setDisconnctTime(false);
 			});
+        log_debug("Create CDR number {}", number);
 		co_return;
 	}																				
 
@@ -147,24 +146,31 @@ asio::awaitable<void> server::workForPool(tcp::socket socket)
 		idRes.keep_alive(res.keep_alive());
 		idRes.body() = std::to_string(callId);
 	}
+    log_debug("Create Call ID responce, Number: {}", number);
 	co_await http::async_write(socket, res, asio::use_awaitable);					//отправляем ответ с Callid
-	
+	log_info("Send Call ID responce. Number: {1:d}, Call ID: {0:d}", callId, number);
 	//далее мы проверяем услове для очереди
 
 	for (;;) {
 		if (callId == idPool[0] && freeOperator < nOperator) {
 			freeOperator++;
+
 			cdr.setOperatorTime(true);												//сохраняем в CDR время ответа оператора
 			//co_await asio::steady_timer(socket.get_executor(), std::chrono::seconds(randCallTime(from, to)), asio::use_awaitable);
-			std::thread trd([&]() {
+            log_debug("Begin call number: {}", number);
+            std::thread trd([&]() {
 				timer.sozvon(randCallTime(from, to)*1000);
 				});
 			trd.join();
+            log_debug("End call number: {}", number);
 			freeOperator--;
+
 			do_close(std::move(socket));
 			std::thread trd_forDisconnect([&]() {
 				cdr.setDisconnctTime(true);
 				});
+            log_debug("Create CDR number {}", number);
+            log_info("Disconnect number: {}", number);
 			co_return;
 		}
 	}
@@ -180,7 +186,7 @@ asio::awaitable<void> server::listen()
 	tcp::acceptor acceptor(executor, tcp::endpoint(tcp::v4(), 80));
 	for (;;) {
 		tcp::socket socket = co_await acceptor.async_accept(asio::use_awaitable);
-		std::cout << "new connect\n";
+        log_info("New Connect!");
 		asio::co_spawn(executor, workForPool(std::move(socket)), asio::detached);
 	}
 }
@@ -218,19 +224,17 @@ server::server()
 	nOperator = config.getNoperator();
 	from = config.getFrom();
 	to = config.getTo();
-	//std::cout << lengthPool << std::endl << timeout << std::endl << nOperator << std::endl << from << std::endl << to;
+    log_debug("Max length Pool: {4:d}, Timeout: {3:d}, Numbers operator: {2:d}, Random call time from {1:d} to {0:d}.", to, from, nOperator, timeout, lengthPool);
 }
 
 void server::startServer() {
 	asio::io_context ioContext;
-
 	asio::co_spawn(ioContext, listen(), asio::detached);
-
 	ioContext.run();
 }
 
 int main() {
-	
+    spdlog::set_level(spdlog::level::debug);
 	server Server;
 	Server.startServer();
 }

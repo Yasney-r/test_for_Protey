@@ -7,6 +7,8 @@
 #include <boost/property_tree/ptree.hpp>
 #include <boost/property_tree/json_parser.hpp>
 
+#include "log.h"
+
 class config
 {
 public:
@@ -31,7 +33,7 @@ inline void config::openFile() {
 
 	std::ifstream fileConfig{ "D:\\config.json" };
 	if (!fileConfig.is_open()) {
-		std::cout << "ERROR open config file!";
+        log_critical("ERROR open config file!");
 		return;
 	}
 	boost::property_tree::read_json(fileConfig, root);
@@ -39,7 +41,7 @@ inline void config::openFile() {
 inline int config::parseJson(boost::property_tree::ptree root, std::string field) {
 	
 	if (root.empty()) {
-		std::cout << "error!";
+        log_debug("Error config options: return 0");
 		return 0;
 	}
 	return root.get<int>(field);
