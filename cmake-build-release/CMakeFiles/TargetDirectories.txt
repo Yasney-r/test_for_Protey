@@ -1,9 +1,0 @@
-C:/Users/home/source/repos/testForProtey/cmake-build-release/CMakeFiles/edit_cache.dir
-C:/Users/home/source/repos/testForProtey/cmake-build-release/CMakeFiles/rebuild_cache.dir
-C:/Users/home/source/repos/testForProtey/cmake-build-release/testForProtey/CMakeFiles/MyProject.dir
-C:/Users/home/source/repos/testForProtey/cmake-build-release/testForProtey/CMakeFiles/UnitTests.dir
-C:/Users/home/source/repos/testForProtey/cmake-build-release/testForProtey/CMakeFiles/edit_cache.dir
-C:/Users/home/source/repos/testForProtey/cmake-build-release/testForProtey/CMakeFiles/rebuild_cache.dir
-C:/Users/home/source/repos/testForProtey/cmake-build-release/test/CMakeFiles/tests.dir
-C:/Users/home/source/repos/testForProtey/cmake-build-release/test/CMakeFiles/edit_cache.dir
-C:/Users/home/source/repos/testForProtey/cmake-build-release/test/CMakeFiles/rebuild_cache.dir
